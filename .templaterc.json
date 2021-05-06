@@ -1,8 +1,0 @@
-{
-    "files": [
-        "recipe/*",
-        "history/README.md",
-        ".github/**/*",
-        "environment.yaml"
-    ]
-}
