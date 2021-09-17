@@ -6,7 +6,9 @@ import argparse
 import subprocess
 import yaml
 
+from ooi_harvester.producer.models import StreamHarvest
 from ooi_harvester.processor.pipeline import OOIStreamPipeline
+from ooi_harvester.processor.state_handlers import process_status_update
 
 from ooi_harvester.config import (
     CONFIG_PATH_STR,
@@ -64,13 +66,14 @@ def parse_args():
 def main(test_run, refresh, data_bucket, project_name, run_flow):
     response = json.load(RESPONSE_PATH.open())
     config_json = yaml.load(CONFIG_PATH.open(), Loader=yaml.SafeLoader)
+    stream_harvest = StreamHarvest(**config_json)
 
     # read from config file if flags are False
-    if not refresh:
-        refresh = config_json['harvest_options'].get('refresh', False)
+    if refresh:
+        stream_harvest.harvest_options.refresh = refresh
 
-    if not test_run:
-        test_run = config_json['harvest_options'].get('test', False)
+    if test_run:
+        stream_harvest.harvest_options.test = test_run
 
     # Get name and image tag
     name = response['stream']['table_name']
@@ -103,13 +106,12 @@ def main(test_run, refresh, data_bucket, project_name, run_flow):
     print("1) SETTING UP THE FLOW")
     pipeline = OOIStreamPipeline(
         response,
-        refresh=refresh,
-        existing_data_path=data_bucket,
         storage_type='docker',
+        stream_harvest=stream_harvest,
         run_config_type='kubernetes',
         storage_options=storage_options,
         run_config_options=run_options,
-        test_run=test_run,
+        task_state_handlers=[process_status_update]
     )
     pipeline.flow.validate()
     print(pipeline)

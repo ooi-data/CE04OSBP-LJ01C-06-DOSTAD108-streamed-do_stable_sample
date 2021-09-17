@@ -6,9 +6,11 @@ import argparse
 import sys
 import dateutil
 
+from ooi_harvester.producer import StreamHarvest
 from ooi_harvester.producer import (
-    fetch_instrument_streams_list,
+    fetch_streams_list,
     create_request_estimate,
+    create_catalog_request,
     perform_request,
 )
 from ooi_harvester.processor.checker import check_in_progress
@@ -43,22 +45,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def main(data_check):
-    config_json = yaml.load(CONFIG_PATH.open(), Loader=yaml.SafeLoader)
-    # To skip when config yaml is invalid
-    # TODO: Need to add more checks for other values!
-    if ' ' in config_json['instrument']:
-        print("Invalid configuration found. Skipping request ...")
-        sys.exit(0)
-
-    table_name = "-".join(
-        [
-            config_json['instrument'],
-            config_json['stream']['method'],
-            config_json['stream']['name'],
-        ]
-    )
-    instrument_rd = config_json['instrument']
+def produce(data_check: bool, stream_harvest: StreamHarvest) -> dict:
+    table_name = stream_harvest.table_name
     if data_check:
         print("Checking data ...")
         if not REQUEST_STATUS_PATH.exists() or not RESPONSE_PATH.exists():
@@ -107,34 +95,59 @@ def main(data_check):
             status_json["data_ready"] = False
     else:
         print("Requesting data ...")
-        streams_list = fetch_instrument_streams_list(instrument_rd)
-        stream_dct = list(
+        streams_list = fetch_streams_list(stream_harvest)
+        stream_dct = next(
             filter(lambda s: s['table_name'] == table_name, streams_list)
-        )[0]
-        request_dt = datetime.datetime.utcnow().isoformat()
-        estimated_request = create_request_estimate(
-            stream_dct=stream_dct,
-            refresh=config_json['harvest_options'].get('refresh', False),
-            existing_data_path=config_json['harvest_options'].get(
-                'path', 's3://ooi-data'
-            ),
         )
-        if "requestUUID" in estimated_request['estimated']:
-            print("Continue to actual request ...")
-            request_response = perform_request(
-                estimated_request,
-                refresh=config_json['harvest_options'].get('refresh', False),
-            )
+        request_dt = datetime.datetime.utcnow().isoformat()
 
-            status_json = get_status_json(table_name, request_dt, 'pending')
+        if stream_harvest.harvest_options.goldcopy:
+            try:
+                print("Fetching from OOI Gold Copy ...")
+                request_response = create_catalog_request(
+                    stream_dct,
+                    refresh=stream_harvest.harvest_options.refresh,
+                    existing_data_path=stream_harvest.harvest_options.path,
+                )
+                status_json = get_status_json(
+                    table_name, request_dt, 'pending'
+                )
+            except Exception as e:
+                print(f"Writing out status to failed: {e}")
+                status_json = get_status_json(table_name, request_dt, 'failed')
         else:
-            print("Writing out status to failed ...")
-            request_response = estimated_request
-            status_json = get_status_json(table_name, request_dt, 'failed')
+            estimated_request = create_request_estimate(
+                stream_dct=stream_dct,
+                refresh=stream_harvest.harvest_options.refresh,
+                existing_data_path=stream_harvest.harvest_options.path,
+            )
+            if "requestUUID" in estimated_request['estimated']:
+                print("Continue to actual request ...")
+                request_response = perform_request(
+                    estimated_request,
+                    refresh=stream_harvest.harvest_options.refresh,
+                )
 
+                status_json = get_status_json(
+                    table_name, request_dt, 'pending'
+                )
+            else:
+                print("Writing out status to failed ...")
+                request_response = estimated_request
+                status_json = get_status_json(table_name, request_dt, 'failed')
+
+        print("Data Request completed.")
         RESPONSE_PATH.write_text(json.dumps(request_response))
 
     REQUEST_STATUS_PATH.write_text(yaml.dump(status_json))
+
+    return status_json
+
+
+def main(data_check):
+    config_json = yaml.load(CONFIG_PATH.open(), Loader=yaml.SafeLoader)
+    stream_harvest = StreamHarvest(**config_json)
+    status_json = produce(data_check, stream_harvest)
 
     now = datetime.datetime.utcnow().isoformat()
     # Commit to github
