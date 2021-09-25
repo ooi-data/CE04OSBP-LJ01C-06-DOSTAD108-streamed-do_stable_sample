@@ -105,9 +105,12 @@ def produce(data_check: bool, stream_harvest: StreamHarvest) -> dict:
             try:
                 print("Fetching from OOI Gold Copy ...")
                 request_response = create_catalog_request(
-                    stream_dct,
+                    stream_dct=stream_dct,
+                    start_dt=stream_harvest.harvest_options.custom_range.start,
+                    end_dt=stream_harvest.harvest_options.custom_range.end,
                     refresh=stream_harvest.harvest_options.refresh,
                     existing_data_path=stream_harvest.harvest_options.path,
+                    client_kwargs=stream_harvest.harvest_options.path_settings,
                 )
                 status_json = get_status_json(
                     table_name, request_dt, 'pending'
@@ -118,6 +121,8 @@ def produce(data_check: bool, stream_harvest: StreamHarvest) -> dict:
         else:
             estimated_request = create_request_estimate(
                 stream_dct=stream_dct,
+                start_dt=stream_harvest.harvest_options.custom_range.start,
+                end_dt=stream_harvest.harvest_options.custom_range.end,
                 refresh=stream_harvest.harvest_options.refresh,
                 existing_data_path=stream_harvest.harvest_options.path,
             )
