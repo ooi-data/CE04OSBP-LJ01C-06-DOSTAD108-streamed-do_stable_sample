@@ -1,9 +1,7 @@
 from pathlib import Path
-import os
 import json
 import datetime
 import argparse
-import subprocess
 import yaml
 
 from ooi_harvester.producer.models import StreamHarvest
@@ -77,59 +75,19 @@ def main(test_run, refresh, data_bucket, project_name, run_flow):
 
     # Get name and image tag
     name = response['stream']['table_name']
-    now = datetime.datetime.utcnow()
-    image_registry = IMAGE_REGISTRY
-    image_name = IMAGE_NAME
-    image_tag = f"{name}.{now:%Y%m%dT%H%M}"
-
-    storage_options = dict(
-        registry_url=image_registry,
-        dockerfile=HERE.joinpath("Dockerfile"),
-        image_name=image_name,
-        prefect_directory="/home/jovyan/prefect",
-        env_vars={'HARVEST_ENV': 'ooi-harvester'},
-        python_dependencies=[
-            'git+https://github.com/ooi-data/ooi-harvester.git@main'
-        ],
-        image_tag=image_tag,
-    )
-    run_options = {
-        'env': {
-            'GH_PAT': os.environ.get('GH_PAT', None),
-            'AWS_KEY': os.environ.get('AWS_KEY', None),
-            'AWS_SECRET': os.environ.get('AWS_SECRET', None),
-            'OOI_USERNAME': os.environ.get('OOI_USERNAME', None),
-            'OOI_TOKEN': os.environ.get('OOI_TOKEN', None),
-        }
-    }
 
     print("1) SETTING UP THE FLOW")
     pipeline = OOIStreamPipeline(
         response,
-        storage_type='docker',
         stream_harvest=stream_harvest,
-        run_config_type='kubernetes',
-        storage_options=storage_options,
-        run_config_options=run_options,
-        task_state_handlers=[process_status_update]
+        task_state_handlers=[process_status_update],
+        data_availability=True,
+        da_config={'gh_write': True}
     )
     pipeline.flow.validate()
     print(pipeline)
 
-    print("2) REGISTERING THE FLOW")
-    pipeline.flow.register(project_name=project_name)
-
     if run_flow:
-        print("3) RUNNING THE FLOW")
-        subprocess.Popen(
-            [
-                "prefect",
-                "run",
-                "flow",
-                f"--name={name}",
-                f"--project={project_name}",
-            ]
-        )
         status_json = get_process_status_json(
             table_name=name,
             data_bucket=data_bucket,
@@ -138,8 +96,11 @@ def main(test_run, refresh, data_bucket, project_name, run_flow):
             data_start=response["stream"]["beginTime"],
             data_end=response["stream"]["endTime"],
         )
-        print("4) WRITING FLOW STATUS")
+        print("2) WRITING FLOW STATUS")
         write_process_status_json(status_json)
+
+        print("3) RUNNING THE FLOW")
+        pipeline.flow.run()
 
 
 if __name__ == "__main__":
