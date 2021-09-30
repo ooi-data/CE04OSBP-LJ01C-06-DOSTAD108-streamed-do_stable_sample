@@ -1,6 +1,6 @@
 data_location: s3://ooi-data/CE04OSBP-LJ01C-06-DOSTAD108-streamed-do_stable_sample
 data_stream: CE04OSBP-LJ01C-06-DOSTAD108-streamed-do_stable_sample
-end_date: '2021-09-17T23:01:36.687Z'
-last_updated: '2021-09-18T02:23:44.167541'
+end_date: '2021-09-29T18:16:14.561Z'
+last_updated: '2021-09-30T10:04:13.439217Z'
 start_date: '2018-11-07T23:08:14.833Z'
-status: success
+status: pending
