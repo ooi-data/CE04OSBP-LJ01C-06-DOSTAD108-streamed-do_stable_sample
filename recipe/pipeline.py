@@ -100,6 +100,7 @@ def main(test_run, refresh, data_bucket, project_name, run_flow):
             'AWS_SECRET': os.environ.get('AWS_SECRET', None),
             'OOI_USERNAME': os.environ.get('OOI_USERNAME', None),
             'OOI_TOKEN': os.environ.get('OOI_TOKEN', None),
+            'PREFECT__CLOUD__HEARTBEAT_MODE': 'thread',
         },
         'cpu': '2 vcpu',
         'memory': '16 GB',
