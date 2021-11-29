@@ -25,7 +25,7 @@ from ooi_harvester.config import (
     COMMIT_MESSAGE_TEMPLATE,
     STATUS_EMOJIS,
 )
-from ooi_harvester.utils.github import get_status_json, commit, push
+from ooi_harvester.utils.github import get_status_json, commit, push, create_request_commit_message
 
 HERE = Path(__file__).parent.absolute()
 BASE = HERE.parent.absolute()
@@ -57,89 +57,111 @@ def produce(data_check: bool, stream_harvest: StreamHarvest) -> dict:
         )
         response = json.load(RESPONSE_PATH.open())
 
-        if 'status_url' in response['result']:
-            in_progress = check_in_progress(response['result']['status_url'])
-            if not in_progress:
-                print("Data available for download")
-                status_json["status"] = "success"
-                status_json["data_ready"] = True
-            else:
-                time_since_request = (
-                    datetime.datetime.utcnow()
-                    - dateutil.parser.parse(response['result']['request_dt'])
+        if status_json["status"] != "discontinued":
+            if 'status_url' in response['result']:
+                in_progress = check_in_progress(
+                    response['result']['status_url']
                 )
-                if time_since_request > datetime.timedelta(days=2):
-                    catalog_dict = parse_response_thredds(response)
-                    filtered_catalog_dict = filter_and_parse_datasets(
-                        catalog_dict
-                    )
-                    if len(filtered_catalog_dict['datasets']) > 0:
-                        print(
-                            "Data request timeout reached. But nc files are still available."
+                if not in_progress:
+                    print("Data available for download")
+                    status_json["status"] = "success"
+                    status_json["data_ready"] = True
+                else:
+                    time_since_request = (
+                        datetime.datetime.utcnow()
+                        - dateutil.parser.parse(
+                            response['result']['request_dt']
                         )
-                        status_json["status"] = "success"
-                        status_json["data_ready"] = True
+                    )
+                    if time_since_request > datetime.timedelta(days=2):
+                        catalog_dict = parse_response_thredds(response)
+                        filtered_catalog_dict = filter_and_parse_datasets(
+                            catalog_dict
+                        )
+                        if len(filtered_catalog_dict['datasets']) > 0:
+                            print(
+                                "Data request timeout reached. But nc files are still available."
+                            )
+                            status_json["status"] = "success"
+                            status_json["data_ready"] = True
+                        else:
+                            print(
+                                f"Data request timeout reached. Has been waiting for more than 2 days. ({str(time_since_request)})"
+                            )
+                            status_json["status"] = "failed"
+                            status_json["data_ready"] = False
                     else:
                         print(
-                            f"Data request timeout reached. Has been waiting for more than 2 days. ({str(time_since_request)})"
+                            f"Data request time elapsed: {str(time_since_request)}"
                         )
-                        status_json["status"] = "failed"
-                        status_json["data_ready"] = False
-                else:
-                    print(
-                        f"Data request time elapsed: {str(time_since_request)}"
-                    )
-                    sys.exit(0)
+                        sys.exit(0)
+            else:
+                status_json["status"] = "skip"
+                status_json["data_ready"] = False
         else:
-            status_json["status"] = "skip"
-            status_json["data_ready"] = False
+            print(f"{table_name} has been discontinued. Skipping...")
+            sys.exit(0)
     else:
         print("Requesting data ...")
         streams_list = fetch_streams_list(stream_harvest)
-        stream_dct = next(
-            filter(lambda s: s['table_name'] == table_name, streams_list)
-        )
         request_dt = datetime.datetime.utcnow().isoformat()
+        try:
+            stream_dct = next(
+                filter(lambda s: s['table_name'] == table_name, streams_list)
+            )
 
-        if stream_harvest.harvest_options.goldcopy:
-            try:
-                print("Fetching from OOI Gold Copy ...")
-                request_response = create_catalog_request(
+            if stream_harvest.harvest_options.goldcopy:
+                try:
+                    print("Fetching from OOI Gold Copy ...")
+                    request_response = create_catalog_request(
+                        stream_dct=stream_dct,
+                        start_dt=stream_harvest.harvest_options.custom_range.start,
+                        end_dt=stream_harvest.harvest_options.custom_range.end,
+                        refresh=stream_harvest.harvest_options.refresh,
+                        existing_data_path=stream_harvest.harvest_options.path,
+                        client_kwargs=stream_harvest.harvest_options.path_settings,
+                    )
+                    status_json = get_status_json(
+                        table_name, request_dt, 'pending'
+                    )
+                except Exception as e:
+                    print(f"Writing out status to failed: {e}")
+                    status_json = get_status_json(
+                        table_name, request_dt, 'failed'
+                    )
+            else:
+                estimated_request = create_request_estimate(
                     stream_dct=stream_dct,
                     start_dt=stream_harvest.harvest_options.custom_range.start,
                     end_dt=stream_harvest.harvest_options.custom_range.end,
                     refresh=stream_harvest.harvest_options.refresh,
                     existing_data_path=stream_harvest.harvest_options.path,
-                    client_kwargs=stream_harvest.harvest_options.path_settings,
                 )
-                status_json = get_status_json(
-                    table_name, request_dt, 'pending'
-                )
-            except Exception as e:
-                print(f"Writing out status to failed: {e}")
-                status_json = get_status_json(table_name, request_dt, 'failed')
-        else:
-            estimated_request = create_request_estimate(
-                stream_dct=stream_dct,
-                start_dt=stream_harvest.harvest_options.custom_range.start,
-                end_dt=stream_harvest.harvest_options.custom_range.end,
-                refresh=stream_harvest.harvest_options.refresh,
-                existing_data_path=stream_harvest.harvest_options.path,
-            )
-            if "requestUUID" in estimated_request['estimated']:
-                print("Continue to actual request ...")
-                request_response = perform_request(
-                    estimated_request,
-                    refresh=stream_harvest.harvest_options.refresh,
-                )
+                if "requestUUID" in estimated_request['estimated']:
+                    print("Continue to actual request ...")
+                    request_response = perform_request(
+                        estimated_request,
+                        refresh=stream_harvest.harvest_options.refresh,
+                    )
 
-                status_json = get_status_json(
-                    table_name, request_dt, 'pending'
-                )
-            else:
-                print("Writing out status to failed ...")
-                request_response = estimated_request
-                status_json = get_status_json(table_name, request_dt, 'failed')
+                    status_json = get_status_json(
+                        table_name, request_dt, 'pending'
+                    )
+                else:
+                    print("Writing out status to failed ...")
+                    request_response = estimated_request
+                    status_json = get_status_json(
+                        table_name, request_dt, 'failed'
+                    )
+
+        except Exception:
+            print("Stream not found in OOI Database.")
+            request_response = {
+                "message": f"{table_name} not found in OOI Database. It may be that this stream has been discontinued."  # noqa
+            }
+            status_json = get_status_json(
+                table_name, request_dt, 'discontinued'
+            )
 
         print("Data Request completed.")
         RESPONSE_PATH.write_text(json.dumps(request_response))
@@ -154,13 +176,8 @@ def main(data_check):
     stream_harvest = StreamHarvest(**config_json)
     status_json = produce(data_check, stream_harvest)
 
-    now = datetime.datetime.utcnow().isoformat()
     # Commit to github
-    commit_message = COMMIT_MESSAGE_TEMPLATE(
-        status_emoji=STATUS_EMOJIS[status_json['status']],
-        status=status_json['status'],
-        request_dt=now,
-    )
+    commit_message = create_request_commit_message(status_json)
     commit(message=commit_message)
     push()
 
