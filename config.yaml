@@ -1,6 +1,6 @@
 assigness: []
 harvest_options:
-  goldcopy: true
+  goldcopy: false
   path: s3://ooi-data
   refresh: true
   test: false
