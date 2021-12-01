@@ -22,6 +22,7 @@ dependencies:
   - siphon
   - prefect>=0.14
   - rechunker
+  - flatten-dict
   - pip:
       - 'git+https://github.com/ooi-data/ooi-harvester.git@main'
   - python=3.8
