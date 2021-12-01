@@ -105,11 +105,22 @@ def produce(data_check: bool, stream_harvest: StreamHarvest) -> dict:
         print("Requesting data ...")
         streams_list = fetch_streams_list(stream_harvest)
         request_dt = datetime.datetime.utcnow().isoformat()
+        stream_exists = True
         try:
             stream_dct = next(
                 filter(lambda s: s['table_name'] == table_name, streams_list)
             )
+        except Exception:
+            print("Stream not found in OOI Database.")
+            request_response = {
+                "message": f"{table_name} not found in OOI Database. It may be that this stream has been discontinued."  # noqa
+            }
+            status_json = get_status_json(
+                table_name, request_dt, 'discontinued'
+            )
+            stream_exists = False
 
+        if stream_exists:
             if stream_harvest.harvest_options.goldcopy:
                 try:
                     print("Fetching from OOI Gold Copy ...")
@@ -153,15 +164,6 @@ def produce(data_check: bool, stream_harvest: StreamHarvest) -> dict:
                     status_json = get_status_json(
                         table_name, request_dt, 'failed'
                     )
-
-        except Exception:
-            print("Stream not found in OOI Database.")
-            request_response = {
-                "message": f"{table_name} not found in OOI Database. It may be that this stream has been discontinued."  # noqa
-            }
-            status_json = get_status_json(
-                table_name, request_dt, 'discontinued'
-            )
 
         print("Data Request completed.")
         RESPONSE_PATH.write_text(json.dumps(request_response))
