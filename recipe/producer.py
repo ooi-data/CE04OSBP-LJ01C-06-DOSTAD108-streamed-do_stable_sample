@@ -147,6 +147,7 @@ def produce(data_check: bool, stream_harvest: StreamHarvest) -> dict:
                     end_dt=stream_harvest.harvest_options.custom_range.end,
                     refresh=stream_harvest.harvest_options.refresh,
                     existing_data_path=stream_harvest.harvest_options.path,
+                    request_kwargs=dict(provenance=True)
                 )
                 if "requestUUID" in estimated_request['estimated']:
                     print("Continue to actual request ...")
