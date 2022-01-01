@@ -1,5 +1,5 @@
-data_ready: true
+data_ready: false
 data_stream: CE04OSBP-LJ01C-06-DOSTAD108-streamed-do_stable_sample
-last_request: '2021-12-21T22:15:38.249265Z'
+last_request: '2022-01-01T03:07:04.842716Z'
 response: https://raw.githubusercontent.com/ooi-data/CE04OSBP-LJ01C-06-DOSTAD108-streamed-do_stable_sample/main/history/response.json
-status: success
+status: pending
