@@ -77,6 +77,8 @@ parent_flow.storage = Docker(
     image_tag=image_tag,
     build_kwargs={
         'nocache': True,
-        'buildargs': {'PYTHON_VERSION': os.environ.get('PYTHON_VERSION', 3.8)},
+        'buildargs': {
+            'PYTHON_VERSION': os.environ.get('PYTHON_VERSION', '3.8')
+        },
     },
 )
